@@ -14,10 +14,10 @@ class BaseResearcher:
     def __init__(self):
         tavily_key = os.getenv("TAVILY_API_KEY")
         openai_key = os.getenv("OPENAI_API_KEY")
-        
+
         if not tavily_key or not openai_key:
             raise ValueError("Missing API keys")
-            
+
         self.tavily_client = AsyncTavilyClient(api_key=tavily_key)
         self.openai_client = AsyncOpenAI(api_key=openai_key)
         self.analyst_type = "base_researcher"  # Default type
@@ -39,10 +39,10 @@ class BaseResearcher:
         current_year = datetime.now().year
         websocket_manager = state.get('websocket_manager')
         job_id = state.get('job_id')
-        
+
         try:
             logger.info(f"Generating queries for {company} as {self.analyst_type}")
-            
+
             response = await self.openai_client.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[
@@ -60,7 +60,7 @@ class BaseResearcher:
                 max_tokens=4096,
                 stream=True
             )
-            
+
             queries = []
             current_query = ""
             current_query_number = 1
@@ -68,11 +68,11 @@ class BaseResearcher:
             async for chunk in response:
                 if chunk.choices[0].finish_reason == "stop":
                     break
-                    
+
                 content = chunk.choices[0].delta.content
                 if content:
                     current_query += content
-                    
+
                     # Stream the current state to the UI.
                     if websocket_manager and job_id:
                         await websocket_manager.send_status_update(
@@ -86,12 +86,12 @@ class BaseResearcher:
                                 "is_complete": False
                             }
                         )
-                    
+
                     # If a newline is detected, treat it as a complete query.
                     if '\n' in current_query:
                         parts = current_query.split('\n')
                         current_query = parts[-1]  # The last part is the start of the next query.
-                        
+
                         for query in parts[:-1]:
                             query = query.strip()
                             if query:
@@ -127,7 +127,7 @@ class BaseResearcher:
                         }
                     )
                 current_query_number += 1
-            
+
             logger.info(f"Generated {len(queries)} queries for {self.analyst_type}: {queries}")
 
             if not queries:
@@ -136,9 +136,9 @@ class BaseResearcher:
             # Limit to at most 4 queries.
             queries = queries[:4]
             logger.info(f"Final queries for {self.analyst_type}: {queries}")
-            
+
             return queries
-            
+
         except Exception as e:
             logger.error(f"Error generating queries for {company}: {e}")
             if websocket_manager and job_id:
@@ -190,7 +190,7 @@ class BaseResearcher:
                 "include_raw_content": False,
                 "max_results": 5
             }
-            
+
             if self.analyst_type == "news_analyst":
                 search_params["topic"] = "news"
             elif self.analyst_type == "financial_analyst":
@@ -200,24 +200,24 @@ class BaseResearcher:
                 query,
                 **search_params
             )
-            
+
             docs = {}
             for result in results.get("results", []):
                 if not result.get("content") or not result.get("url"):
                     continue
-                    
+
                 url = result.get("url")
                 title = result.get("title", "")
-                
+
                 # Clean up and validate the title using the references module
                 if title:
                     title = clean_title(title)
                     # If title is the same as URL or empty, set to empty to trigger extraction later
                     if title.lower() == url.lower() or not title.strip():
                         title = ""
-                
+
                 logger.info(f"Tavily search result for '{query}': URL={url}, Title='{title}'")
-                
+
                 docs[url] = {
                     "title": title,
                     "content": result.get("content", ""),
@@ -240,7 +240,7 @@ class BaseResearcher:
                 )
 
             return docs
-            
+
         except Exception as e:
             logger.error(f"Error searching query '{query}': {e}")
             if websocket_manager and job_id:
@@ -287,7 +287,7 @@ class BaseResearcher:
             "include_raw_content": False,
             "max_results": 5
         }
-        
+
         if self.analyst_type == "news_analyst":
             search_params["topic"] = "news"
         elif self.analyst_type == "financial_analyst":
@@ -322,10 +322,10 @@ class BaseResearcher:
             for item in result.get("results", []):
                 if not item.get("content") or not item.get("url"):
                     continue
-                    
+
                 url = item.get("url")
                 title = item.get("title", "")
-                
+
                 if title:
                     title = clean_title(title)
                     if title.lower() == url.lower() or not title.strip():

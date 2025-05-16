@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class GroundingNode:
     """Gathers initial grounding data about the company."""
-    
+
     def __init__(self) -> None:
         self.tavily_client = AsyncTavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
@@ -18,10 +18,10 @@ class GroundingNode:
             logger.info("Websocket manager found in state")
         else:
             logger.warning("No websocket manager found in state")
-        
+
         company = state.get('company', 'Unknown Company')
         msg = f"🎯 Initiating research for {company}...\n"
-        
+
         if websocket_manager := state.get('websocket_manager'):
             if job_id := state.get('job_id'):
                 await websocket_manager.send_status_update(
@@ -37,7 +37,7 @@ class GroundingNode:
         if url := state.get('company_url'):
             msg += f"\n🌐 Analyzing company website: {url}"
             logger.info(f"Starting website analysis for {url}")
-            
+
             # Send initial briefing status
             if websocket_manager := state.get('websocket_manager'):
                 if job_id := state.get('job_id'):
@@ -51,12 +51,12 @@ class GroundingNode:
             try:
                 logger.info("Initiating Tavily extraction")
                 site_extraction = await self.tavily_client.extract(url, extract_depth="basic")
-                
+
                 raw_contents = []
                 for item in site_extraction.get("results", []):
                     if content := item.get("raw_content"):
                         raw_contents.append(content)
-                
+
                 if raw_contents:
                     site_scrape = {
                         'title': company,
@@ -96,7 +96,7 @@ class GroundingNode:
                             status="website_error",
                             message=error_msg,
                             result={
-                                "step": "Initial Site Scrape", 
+                                "step": "Initial Site Scrape",
                                 "error": error_str,
                                 "continue_research": True  # Continue with research even if website extraction fails
                             }
@@ -119,7 +119,7 @@ class GroundingNode:
         if industry := state.get('industry'):
             msg += f"\n🏭 Industry: {industry}"
             context_data["industry"] = industry
-        
+
         # Initialize ResearchState with input information
         research_state = {
             # Copy input fields

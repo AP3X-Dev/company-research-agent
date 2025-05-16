@@ -1,11 +1,11 @@
 from langchain_core.messages import SystemMessage
-from langgraph.graph import StateGraph
-from typing import Dict, Any, AsyncIterator
+from typing import Dict, Any, AsyncIterator, List
 import logging
+import asyncio
 
 from .classes.state import InputState
 from .nodes import GroundingNode
-from .nodes.researchers import (FinancialAnalyst, NewsScanner, 
+from .nodes.researchers import (FinancialAnalyst, NewsScanner,
                                IndustryAnalyzer, CompanyAnalyzer)
 from .nodes.collector import Collector
 from .nodes.curator import Curator
@@ -20,7 +20,7 @@ class Graph:
                  websocket_manager=None, job_id=None):
         self.websocket_manager = websocket_manager
         self.job_id = job_id
-        
+
         # Initialize InputState
         self.input_state = InputState(
             company=company,
@@ -36,7 +36,6 @@ class Graph:
 
         # Initialize nodes with WebSocket manager and job ID
         self._init_nodes()
-        self._build_workflow()
 
     def _init_nodes(self):
         """Initialize all workflow nodes"""
@@ -51,55 +50,127 @@ class Graph:
         self.briefing = Briefing()
         self.editor = Editor()
 
-    def _build_workflow(self):
-        """Configure the state graph workflow"""
-        self.workflow = StateGraph(InputState)
-        
-        # Add nodes with their respective processing functions
-        self.workflow.add_node("grounding", self.ground.run)
-        self.workflow.add_node("financial_analyst", self.financial_analyst.run)
-        self.workflow.add_node("news_scanner", self.news_scanner.run)
-        self.workflow.add_node("industry_analyst", self.industry_analyst.run)
-        self.workflow.add_node("company_analyst", self.company_analyst.run)
-        self.workflow.add_node("collector", self.collector.run)
-        self.workflow.add_node("curator", self.curator.run)
-        self.workflow.add_node("enricher", self.enricher.run)
-        self.workflow.add_node("briefing", self.briefing.run)
-        self.workflow.add_node("editor", self.editor.run)
-
-        # Configure workflow edges
-        self.workflow.set_entry_point("grounding")
-        self.workflow.set_finish_point("editor")
-        
-        research_nodes = [
-            "financial_analyst", 
-            "news_scanner",
-            "industry_analyst", 
-            "company_analyst"
-        ]
-
-        # Connect grounding to all research nodes
-        for node in research_nodes:
-            self.workflow.add_edge("grounding", node)
-            self.workflow.add_edge(node, "collector")
-
-        # Connect remaining nodes
-        self.workflow.add_edge("collector", "curator")
-        self.workflow.add_edge("curator", "enricher")
-        self.workflow.add_edge("enricher", "briefing")
-        self.workflow.add_edge("briefing", "editor")
-
     async def run(self, thread: Dict[str, Any]) -> AsyncIterator[Dict[str, Any]]:
-        """Execute the research workflow"""
-        compiled_graph = self.workflow.compile()
-        
-        async for state in compiled_graph.astream(
-            self.input_state,
-            thread
-        ):
+        """Execute the research workflow manually without using LangGraph"""
+        # Make sure the input state has all required fields
+        state = dict(self.input_state)
+
+        # Add any missing fields that might be required by the workflow
+        if "messages" not in state:
+            state["messages"] = []
+
+        # Add empty dictionaries for all the fields expected in ResearchState
+        for field in [
+            "site_scrape", "financial_data", "news_data", "industry_data",
+            "company_data", "curated_financial_data", "curated_news_data",
+            "curated_industry_data", "curated_company_data", "briefings"
+        ]:
+            if field not in state:
+                state[field] = {}
+
+        # Add empty lists for list fields
+        for field in ["references"]:
+            if field not in state:
+                state[field] = []
+
+        # Add empty strings for string fields
+        for field in [
+            "financial_briefing", "news_briefing", "industry_briefing",
+            "company_briefing", "report"
+        ]:
+            if field not in state:
+                state[field] = ""
+
+        # Execute the workflow nodes in sequence
+        try:
+            # Step 1: Grounding
+            state["current_node"] = "grounding"
+            state["progress"] = 10
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.ground.run(state)
+            yield state
+
+            # Step 2a: Research (Financial Analyst)
+            state["current_node"] = "research_financial"
+            state["progress"] = 20
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.financial_analyst.run(state)
+            yield state
+
+            # Step 2b: Research (News Scanner)
+            state["current_node"] = "research_news"
+            state["progress"] = 25
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.news_scanner.run(state)
+            yield state
+
+            # Step 2c: Research (Industry Analyzer)
+            state["current_node"] = "research_industry"
+            state["progress"] = 30
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.industry_analyst.run(state)
+            yield state
+
+            # Step 2d: Research (Company Analyzer)
+            state["current_node"] = "research_company"
+            state["progress"] = 35
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.company_analyst.run(state)
+            yield state
+
+            # Step 3: Collector
+            state["current_node"] = "collector"
+            state["progress"] = 40
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.collector.run(state)
+            yield state
+
+            # Step 4: Curator
+            state["current_node"] = "curator"
+            state["progress"] = 50
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.curator.run(state)
+            yield state
+
+            # Step 5: Enricher
+            state["current_node"] = "enricher"
+            state["progress"] = 60
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.enricher.run(state)
+            yield state
+
+            # Step 6: Briefing
+            state["current_node"] = "briefing"
+            state["progress"] = 80
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.briefing.run(state)
+            yield state
+
+            # Step 7: Editor
+            state["current_node"] = "editor"
+            state["progress"] = 90
+            if self.websocket_manager and self.job_id:
+                await self._handle_ws_update(state)
+            state = await self.editor.run(state)
+            state["progress"] = 100
             if self.websocket_manager and self.job_id:
                 await self._handle_ws_update(state)
             yield state
+
+        except Exception as e:
+            logger.error(f"Error in workflow: {str(e)}")
+            state["error"] = str(e)
+            yield state
+            raise
 
     async def _handle_ws_update(self, state: Dict[str, Any]):
         """Handle WebSocket updates based on state changes"""
@@ -115,7 +186,12 @@ class Graph:
             self.job_id,
             update
         )
-    
+
     def compile(self):
-        graph = self.workflow.compile()
-        return graph
+        # Return a dummy compiled graph
+        # This is needed for compatibility with the existing code
+        class DummyCompiledGraph:
+            def __init__(self):
+                pass
+
+        return DummyCompiledGraph()
